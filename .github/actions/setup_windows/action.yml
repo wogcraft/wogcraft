@@ -16,8 +16,8 @@ runs:
     - name: Setup Build Directory
       uses: DamianReeves/write-file-action@v1.0
       with:
-        path: "./build.conf"
+        path: "./tswow/build.conf"
         contents: |
-          BuildDirectory = "C:/tswow-build"
-          InstallDirectory = "../tswow-install"
+          BuildDirectory = "${{ github.workspace }}/../tswow-build"
+          InstallDirectory = "${{ github.workspace }}/../tswow-install"
         write-mode: overwrite

@@ -1,21 +1,21 @@
 name: CI
 on:
   push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+    paths:
+      - 'tswow/**'
+      - '.github/workflows/ci.yml'
+      - '.github/actions/setup_windows/**'
   pull_request:
+    paths:
+      - 'tswow/**'
+      - '.github/workflows/ci.yml'
+      - '.github/actions/setup_windows/**'
   workflow_dispatch:
 jobs:
-  ubuntu-clang-trinitycore:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - uses: ./.github/actions/setup_ubuntu
-      - name: Build tswow
-        working-directory: ./tswow
-        shell: bash
-        run: npm run build noac
-
   windows-msvc-trinitycore:
     runs-on: windows-2022
     steps:
@@ -24,12 +24,64 @@ jobs:
         with:
           submodules: 'recursive'
       - uses: ./.github/actions/setup_windows
+
+      # Cache node_modules
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: tswow/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('tswow/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # Cache C++ build artifacts (TrinityCore)
+      - name: Cache TrinityCore build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/../tswow-build/TrinityCore
+          key: ${{ runner.os }}-trinitycore-${{ hashFiles('tswow/cores/TrinityCore/**/*.cpp', 'tswow/cores/TrinityCore/**/*.h', 'tswow/cores/TrinityCore/**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-trinitycore-
+
+      # Cache other build artifacts (mpqbuilder, blpconverter, etc.)
+      - name: Cache misc builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/../tswow-build/mpqbuilder
+            ${{ github.workspace }}/../tswow-build/blpconverter
+            ${{ github.workspace }}/../tswow-build/adtcreator
+          key: ${{ runner.os }}-misc-build-${{ hashFiles('tswow/misc/**/*.cpp', 'tswow/misc/**/*.h', 'tswow/misc/**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-misc-build-
+
       - name: Build tswow
         working-directory: ./tswow
         run: npm run build-release clean-archives noac tracy=*
-      - name: Publish release
-        working-directory: ./tswow
-        if: github.ref == 'refs/heads/master'
-        run: node .github/scripts/upload-release.js
+
+      # Upload artifacts for all builds
+      - name: Get commit short SHA and build paths
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "build_dir=$(dirname "${{ github.workspace }}")/tswow-build" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tswow-installer-${{ steps.vars.outputs.sha_short }}
+          path: ${{ steps.vars.outputs.build_dir }}/tswow-installer-*.exe
+          retention-days: 30
+
+      # Create release on tag push
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          name: Repack #${{ steps.vars.outputs.sha_short }}
+          files: ${{ steps.vars.outputs.build_dir }}/tswow-installer-*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
