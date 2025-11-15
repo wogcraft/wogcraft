@@ -1,0 +1,3 @@
+[submodule "tswow"]
+	path = tswow
+	url = https://github.com/wogcraft/tswow.git
